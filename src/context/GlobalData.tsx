@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState } from 'react';
 import type { ChartConfig } from '../types';
 
-interface DataContextType {
-    sessionId: string | null;
+// Export interface so it can be used if needed
+export interface GlobalDataType {
+    activeSessionId: string | null;
     domain: string | null;
     charts: ChartConfig[];
     rowCount: number;
@@ -10,16 +11,16 @@ interface DataContextType {
     clearData: () => void;
 }
 
-const DataContext = createContext<DataContextType>({} as DataContextType);
+const GlobalDataContext = createContext<GlobalDataType>({} as GlobalDataType);
 
-export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-    const [sessionId, setSessionId] = useState<string | null>(null);
+export const GlobalDataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+    const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
     const [domain, setDomain] = useState<string | null>(null);
     const [charts, setCharts] = useState<ChartConfig[]>([]);
     const [rowCount, setRowCount] = useState<number>(0);
 
     const setAnalysisResults = (id: string, dom: string, newCharts: ChartConfig[], rows: number) => {
-        setSessionId(id);
+        setActiveSessionId(id);
         setDomain(dom);
         setCharts(newCharts);
         setRowCount(rows);
@@ -27,17 +28,17 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const clearData = () => {
-        setSessionId(null);
+        setActiveSessionId(null);
         setDomain(null);
         setCharts([]);
         setRowCount(0);
     };
 
     return (
-        <DataContext.Provider value={{ sessionId, domain, charts, rowCount, setAnalysisResults, clearData }}>
+        <GlobalDataContext.Provider value={{ activeSessionId, domain, charts, rowCount, setAnalysisResults, clearData }}>
             {children}
-        </DataContext.Provider>
+        </GlobalDataContext.Provider>
     );
 };
 
-export const useData = () => useContext(DataContext);
+export const useGlobalData = (): GlobalDataType => useContext(GlobalDataContext);
