@@ -1,10 +1,10 @@
 /**
- * StatisticalAnalyzer.ts - The Modeler
+ * StatisticalAnalyzer.ts - The Modeler (Refactored)
  * 
  * Performs statistical analysis on cleaned data including:
  * - Basic descriptive statistics (mean, min, max, stdDev)
  * - Correlation analysis between numeric columns
- * - Linear regression modeling with R² scores
+ * - Linear regression modeling with accuracy/details
  */
 
 import type { CleanedData, StatisticalResults, ModelResult } from '../../types';
@@ -17,16 +17,19 @@ export class StatisticalAnalyzer {
      * Analyze the cleaned data and return statistical results
      */
     analyze(data: CleanedData): StatisticalResults {
-        const numericSummary = this.calculateDescriptiveStats(data);
-        const correlations = this.calculateCorrelations(data);
-        const models = this.runRegressionModels(data, correlations);
+        // Derive numeric columns from meta types
+        const numericColumns = Object.keys(data.meta.types).filter(col => data.meta.types[col] === 'number');
+
+        // Pass explicit numericColumns to helpers
+        const numericSummary = this.calculateDescriptiveStats(data, numericColumns);
+        const correlations = this.calculateCorrelations(data, numericColumns);
+        const models = this.runRegressionModels(data, correlations, numericColumns);
 
         return {
-            rowCount: data.rowCount,
-            columnCount: data.columnCount,
-            numericSummary,
-            models,
-            correlations
+            summary: numericSummary,
+            correlations,
+            outliers: [],
+            models
         };
     }
 
@@ -61,31 +64,32 @@ export class StatisticalAnalyzer {
     /**
      * Get meaningful numeric columns (filters out IDs)
      */
-    private getMeaningfulColumns(data: CleanedData): string[] {
-        return data.numericColumns.filter(col => this.isMeaningfulMetric(col));
+    private getMeaningfulColumns(numericColumns: string[]): string[] {
+        return numericColumns.filter(col => this.isMeaningfulMetric(col));
     }
 
     /**
      * Calculate descriptive statistics for all numeric columns
      */
     private calculateDescriptiveStats(
-        data: CleanedData
+        data: CleanedData,
+        numericColumns: string[]
     ): Record<string, { mean: number; min: number; max: number; stdDev: number }> {
         const summary: Record<string, { mean: number; min: number; max: number; stdDev: number }> = {};
 
-        for (const column of data.numericColumns) {
-            const values = data.rows
-                .map(row => Number(row[column]))
-                .filter(v => !isNaN(v) && isFinite(v));
+        for (const column of numericColumns) {
+            const values = data.data
+                .map((row: any) => Number(row[column]))
+                .filter((v: number) => !isNaN(v) && isFinite(v));
 
             if (values.length === 0) continue;
 
-            const mean = values.reduce((a, b) => a + b, 0) / values.length;
+            const mean = values.reduce((a: number, b: number) => a + b, 0) / values.length;
             const min = Math.min(...values);
             const max = Math.max(...values);
 
-            const squaredDiffs = values.map(v => Math.pow(v - mean, 2));
-            const variance = squaredDiffs.reduce((a, b) => a + b, 0) / values.length;
+            const squaredDiffs = values.map((v: number) => Math.pow(v - mean, 2));
+            const variance = squaredDiffs.reduce((a: number, b: number) => a + b, 0) / values.length;
             const stdDev = Math.sqrt(variance);
 
             summary[column] = {
@@ -103,20 +107,21 @@ export class StatisticalAnalyzer {
      * Calculate Pearson correlations between all pairs of numeric columns
      */
     private calculateCorrelations(
-        data: CleanedData
+        data: CleanedData,
+        numericColumns: string[]
     ): Array<{ feature1: string; feature2: string; correlation: number }> {
         const correlations: Array<{ feature1: string; feature2: string; correlation: number }> = [];
 
         // Filter to meaningful metrics only (exclude IDs)
-        const numericCols = this.getMeaningfulColumns(data).slice(0, 10);
+        const numericCols = this.getMeaningfulColumns(numericColumns).slice(0, 10);
 
         for (let i = 0; i < numericCols.length; i++) {
             for (let j = i + 1; j < numericCols.length; j++) {
                 const col1 = numericCols[i];
                 const col2 = numericCols[j];
 
-                const values1 = data.rows.map(row => Number(row[col1])).filter(v => !isNaN(v));
-                const values2 = data.rows.map(row => Number(row[col2])).filter(v => !isNaN(v));
+                const values1 = data.data.map((row: any) => Number(row[col1])).filter((v: number) => !isNaN(v));
+                const values2 = data.data.map((row: any) => Number(row[col2])).filter((v: number) => !isNaN(v));
 
                 if (values1.length !== values2.length || values1.length < 3) continue;
 
@@ -158,7 +163,8 @@ export class StatisticalAnalyzer {
      */
     private runRegressionModels(
         data: CleanedData,
-        correlations: Array<{ feature1: string; feature2: string; correlation: number }>
+        correlations: Array<{ feature1: string; feature2: string; correlation: number }>,
+        numericColumns: string[]
     ): ModelResult[] {
         const models: ModelResult[] = [];
 
@@ -166,8 +172,8 @@ export class StatisticalAnalyzer {
         const topCorrelations = correlations.slice(0, 5);
 
         for (const { feature1, feature2, correlation } of topCorrelations) {
-            const x = data.rows.map(row => Number(row[feature1])).filter(v => !isNaN(v));
-            const y = data.rows.map(row => Number(row[feature2])).filter(v => !isNaN(v));
+            const x = data.data.map((row: any) => Number(row[feature1])).filter((v: number) => !isNaN(v));
+            const y = data.data.map((row: any) => Number(row[feature2])).filter((v: number) => !isNaN(v));
 
             if (x.length < 3 || y.length < 3) continue;
 
@@ -189,33 +195,29 @@ export class StatisticalAnalyzer {
             }
 
             models.push({
-                feature: `${feature1} <-> ${feature2}`,
-                modelType: 'Linear Regression (OLS)',
-                rSquared: Math.round(rSquared * 100) / 100,
-                correlation: Math.round(correlation * 100) / 100,
-                insight
+                modelName: 'Linear Regression (OLS)',
+                accuracy: Math.round(rSquared * 100) / 100,
+                details: `${insight} (Correlation: ${correlation.toFixed(2)}, Feature: ${feature1} <-> ${feature2})`
             });
         }
 
         // If no correlations found, analyze individual numeric columns
-        if (models.length === 0 && data.numericColumns.length > 0) {
-            for (const column of data.numericColumns.slice(0, 3)) {
-                const values = data.rows.map(row => Number(row[column])).filter(v => !isNaN(v));
+        if (models.length === 0 && numericColumns.length > 0) {
+            for (const column of numericColumns.slice(0, 3)) {
+                const values = data.data.map((row: any) => Number(row[column])).filter((v: number) => !isNaN(v));
 
                 if (values.length < 3) continue;
 
-                const mean = values.reduce((a, b) => a + b, 0) / values.length;
-                const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+                const mean = values.reduce((a: number, b: number) => a + b, 0) / values.length;
+                const variance = values.reduce((a: number, b: number) => a + Math.pow(b - mean, 2), 0) / values.length;
                 const cv = (Math.sqrt(variance) / mean) * 100; // Coefficient of variation
 
                 models.push({
-                    feature: column,
-                    modelType: 'Univariate Analysis',
-                    rSquared: 0,
-                    correlation: 0,
-                    insight: cv > 50
+                    modelName: 'Univariate Analysis',
+                    accuracy: 0,
+                    details: `${column}: ${cv > 50
                         ? `High variability (CV: ${cv.toFixed(1)}%) in ${column} suggests significant dispersion in the data.`
-                        : `${column} shows relatively stable distribution (CV: ${cv.toFixed(1)}%).`
+                        : `${column} shows relatively stable distribution (CV: ${cv.toFixed(1)}%).`}`
                 });
             }
         }
