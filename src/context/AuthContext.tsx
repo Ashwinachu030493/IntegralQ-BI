@@ -22,7 +22,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isBypass) {
             console.warn("⚠️ AUTH BYPASS ENABLED: Logging in as Mock User");
             setUser({
-                id: 'mock-id',
+                id: '00000000-0000-0000-0000-000000000000',
                 email: 'bypass@integralq.com',
                 app_metadata: {},
                 user_metadata: {},
